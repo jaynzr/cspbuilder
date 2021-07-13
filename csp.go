@@ -256,7 +256,7 @@ func (pp *Policy) Build() string {
 		sb.WriteString(Default)
 		d.Build(sb)
 
-		d.RequireNonce = pp.HasNonce || d.RequireNonce
+		pp.HasNonce = pp.HasNonce || d.RequireNonce
 	}
 
 	for name, d := range pp.dirs {
@@ -267,7 +267,7 @@ func (pp *Policy) Build() string {
 		sb.WriteString(name)
 		d.Build(sb)
 
-		d.RequireNonce = pp.HasNonce || d.RequireNonce
+		pp.HasNonce = pp.HasNonce || d.RequireNonce
 	}
 
 	if pp.UpgradeInsecureRequests {
