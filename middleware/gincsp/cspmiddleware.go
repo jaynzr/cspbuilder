@@ -1,4 +1,4 @@
-package csp
+package gincsp
 
 import (
 	"github.com/gin-gonic/gin"
