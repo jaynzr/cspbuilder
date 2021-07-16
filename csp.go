@@ -1,3 +1,4 @@
+// Package cspbuilder provides helper funcs to create Content Security Policy
 package cspbuilder
 
 import (
@@ -9,9 +10,11 @@ import (
 	"encoding/base64"
 )
 
-type hashType int
+type hashType uint16
+type sourceFlag uint32
 
 const (
+	// csp v1
 	Default = "default-src"
 	Connect = "connect-src"
 	Font    = "font-src"
@@ -43,81 +46,133 @@ const (
 	Manifest               = "manifest-src"
 	ReportTo               = "report-to"
 
+	upgradeInsecureRequests = "upgrade-insecure-requests;"
+	reportUri               = "report-uri "
+
 	SHA256 hashType = 256
 	SHA384 hashType = 384
 	SHA512 hashType = 512
 )
 
-type Policy struct {
-	dirs      map[string]*Directive
-	ReportURI string
-	Built     string
+// Sources flags to apply to Directive.SourceFlag
+const (
+	None sourceFlag = 0
+	All  sourceFlag = 1 << iota
+	Self
 
+	// RequireNonce means policy must run WithNonce()
+	RequireNonce
+	StrictDynamic
+
+	UnsafeEval
+	UnsafeInline
+	UnsafeHashes
+	UnsafeAllowRedirects
+
+	Blob
+	Data
+	Mediastream
+	Filesystem
+)
+
+var (
+	SelfDirective = &Directive{SourceFlag: Self}
+	NoneDirective = &Directive{SourceFlag: None}
+
+	src = map[sourceFlag]string{
+		None:                 " 'none';",
+		All:                  " *;",
+		Self:                 " 'self'",
+		UnsafeEval:           " 'unsafe-eval'",
+		UnsafeInline:         " 'unsafe-inline'",
+		UnsafeHashes:         " 'unsafe-hashes'",
+		UnsafeAllowRedirects: " 'unsafe-allow-redirects'",
+		StrictDynamic:        " 'strict-dynamic'",
+
+		Blob:        " blob:",
+		Data:        " data:",
+		Mediastream: " mediastream:",
+		Filesystem:  " filesystem:",
+
+		// nonce placeholder in Compiled string. Change using SetNoncePlaceholder()
+		RequireNonce: " $NONCE",
+	}
+)
+
+type Policy struct {
+	dirs map[string]*Directive
+
+	// ReportURI appends "report-uri <string>"
+	ReportURI string
+
+	// Compiled policy after running Build()
+	Compiled string
+
+	// UpgradeInsecureRequests appends "'upgrade-insecure-requests'"
 	UpgradeInsecureRequests bool
 
-	HasNonce bool
-}
-
-type Directive struct {
-	Sources []string
-
-	All bool
-
-	// keyword-source
-	Self                 bool
-	None                 bool
-	UnsafeEval           bool
-	UnsafeInline         bool
-	UnsafeHashes         bool
-	UnsafeAllowRedirects bool
-	StrictDynamic        bool
-
-	Blob        bool
-	Data        bool
-	Mediastream bool
-	Filesystem  bool
-
+	// RequireNonce is set if policy must run WithNonce()
 	RequireNonce bool
 }
 
-var (
-	Self             = &Directive{Self: true}
-	None             = &Directive{None: true}
-	noncePlaceHolder = "$NONCE" // change using SetNoncePlaceholder()
-)
+type Directive struct {
+	Sources    []string
+	SourceFlag sourceFlag
+}
 
 // SetNoncePlaceholder changes the nonce placeholder value $NONCE to your csp middleware's.
 func SetNoncePlaceholder(ph string) {
 	if ph == "" {
 		ph = "$NONCE"
 	}
-	noncePlaceHolder = ph
+	// noncePlaceHolder = ph
+	src[RequireNonce] = " " + ph
 }
 
-// New starter policy.
+// Starter creates new policy with sensible defaults
 // default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; base-uri 'self';form-action 'self'
 // https://content-security-policy.com/
-func New() *Policy {
+func Starter() *Policy {
 	pol := &Policy{}
 	pol.dirs = make(map[string]*Directive)
 
-	pol.dirs[Default] = None
-	pol.dirs[BaseURI] = Self
-	pol.dirs[Script] = Self
-	pol.dirs[Connect] = Self
-	pol.dirs[Img] = Self
-	pol.dirs[Style] = Self
-	pol.dirs[Form] = Self
+	pol.dirs[Default] = NoneDirective
+	pol.dirs[BaseURI] = SelfDirective
+	pol.dirs[Script] = SelfDirective
+	pol.dirs[Connect] = SelfDirective
+	pol.dirs[Img] = SelfDirective
+	pol.dirs[Style] = SelfDirective
+	pol.dirs[Form] = SelfDirective
 
 	return pol
 }
 
+// New creates blank policy
+func New() *Policy {
+	pol := &Policy{}
+	pol.dirs = make(map[string]*Directive)
+
+	return pol
+}
+
+// With adds directive to policy.
+// Existing directive is replaced.
 func (pp *Policy) With(name string, d *Directive) *Policy {
+	if pp.dirs ==  nil {
+		pp.dirs = make(map[string]*Directive)
+	}
+
 	pp.dirs[name] = d
 	return pp
 }
 
+// New directive added to policy.
+// Existing directive is replaced.
 func (pp *Policy) New(name string, sources ...string) *Directive {
+	if pp.dirs ==  nil {
+		pp.dirs = make(map[string]*Directive)
+	}
+
 	d := &Directive{}
 	pp.dirs[name] = d
 	if len(sources) > 0 {
@@ -126,90 +181,50 @@ func (pp *Policy) New(name string, sources ...string) *Directive {
 	return d
 }
 
+// Remove directive from policy
 func (pp *Policy) Remove(name string) {
 	delete(pp.dirs, name)
 }
 
-func (d *Directive) Build(sb *strings.Builder) *strings.Builder {
+// write directive.
+// Used by Policy.Build()
+func (d *Directive) write(sb *strings.Builder) {
 	if sb == nil {
 		sb = &strings.Builder{}
 	}
 
-	if d.All {
-		sb.WriteString(" *;")
-		return sb
+	if (d.SourceFlag == All) || (d.SourceFlag == None && len(d.Sources) == 0) {
+		s := src[d.SourceFlag]
+
+		sb.WriteString(s)
+
+		return
 	}
 
-	if d.None {
-		sb.WriteString(" 'none';")
-		return sb
-	}
-
-	if d.RequireNonce {
-		sb.WriteByte(' ')
-		sb.WriteString(noncePlaceHolder)
-	}
-
-	if d.StrictDynamic {
-		sb.WriteString(" 'strict-dynamic'")
-	}
-
-	if d.Self {
-		sb.WriteString(" 'self'")
-	}
-
-	if d.UnsafeInline {
-		sb.WriteString(" 'unsafe-inline'")
-	}
-
-	if d.UnsafeEval {
-		sb.WriteString(" 'unsafe-eval'")
-	}
-
-	if d.UnsafeAllowRedirects {
-		sb.WriteString(" 'unsafe-allow-redirects'")
-	}
-
-	if d.UnsafeHashes {
-		sb.WriteString(" 'unsafe-hashes'")
-	}
-
-	if d.Blob {
-		sb.WriteString(" blob:")
-	}
-
-	if d.Data {
-		sb.WriteString(" data:")
-	}
-
-	if d.Mediastream {
-		sb.WriteString(" mediastream:")
-	}
-
-	if d.Filesystem {
-		sb.WriteString(" filesystem:")
-	}
-
-	if len(d.Sources) > 0 {
-		for i := 0; i < len(d.Sources); i++ {
-			sb.WriteByte(' ')
-			sb.WriteString(d.Sources[i])
+	for f := Self; f <= d.SourceFlag; f = f << 1 {
+		if ff := f & d.SourceFlag; ff != 0 {
+			if s, ok := src[ff]; ok {
+				sb.WriteString(s)
+			}
 		}
 	}
 
-	sb.WriteByte(';')
+	for i := 0; i < len(d.Sources); i++ {
+		s := d.Sources[i]
 
-	return sb
+		sb.WriteByte(' ')
+		sb.WriteString(s)
+
+	}
+
+	sb.WriteByte(';')
 }
 
 func (d *Directive) String() string {
-	return d.Build(nil).String()
-}
+	var sb strings.Builder
+	d.write(&sb)
 
-// Nonce marks IncludeNonce and StrictDynamic
-func (d *Directive) Nonce(req bool, strictDynamic bool) {
-	d.RequireNonce = req
-	d.StrictDynamic = strictDynamic
+	return sb.String()
 }
 
 // Hash the source and appends to Sources
@@ -235,7 +250,7 @@ func (d *Directive) Hash(ht hashType, source string) {
 		hash = h[:]
 	}
 
-	sb.WriteString(base64.StdEncoding.EncodeToString(hash[:]))
+	sb.WriteString(base64.StdEncoding.EncodeToString(hash))
 	sb.WriteByte('\'')
 	d.Sources = append(d.Sources, sb.String())
 
@@ -246,17 +261,19 @@ func (d *Directive) Fetch(sources ...string) {
 	d.Sources = append(d.Sources, sources...)
 }
 
-// Build policy into string, including NoncePlaceholder when required.
+// Build policy into string
 func (pp *Policy) Build() string {
-	sb := &strings.Builder{}
-	pp.HasNonce = false
+	var (
+		sb = &strings.Builder{}
+	)
+	pp.RequireNonce = false
 
 	// place default-src first for readability
 	if d, ok := pp.dirs[Default]; ok {
 		sb.WriteString(Default)
-		d.Build(sb)
+		d.write(sb)
 
-		pp.HasNonce = pp.HasNonce || d.RequireNonce
+		pp.RequireNonce = pp.RequireNonce || (d.SourceFlag&RequireNonce) != 0
 	}
 
 	for name, d := range pp.dirs {
@@ -265,45 +282,50 @@ func (pp *Policy) Build() string {
 		}
 
 		sb.WriteString(name)
-		d.Build(sb)
+		d.write(sb)
 
-		pp.HasNonce = pp.HasNonce || d.RequireNonce
+		pp.RequireNonce = pp.RequireNonce || (d.SourceFlag&RequireNonce) != 0
 	}
 
 	if pp.UpgradeInsecureRequests {
-		sb.WriteString("upgrade-insecure-requests;")
+		sb.WriteString(upgradeInsecureRequests)
 	}
 
 	if pp.ReportURI != "" {
-		sb.WriteString("report-uri ")
+		sb.WriteString(reportUri)
 		sb.WriteString(pp.ReportURI)
 	}
 
-	pp.Built = strings.Trim(sb.String(), " ;")
+	pp.Compiled = sb.String()
+	if len(pp.Compiled) > 0 && pp.Compiled[len(pp.Compiled)-1:] == ";" {
+		pp.Compiled = pp.Compiled[:len(pp.Compiled)-1]
+	}
 
-	return pp.Built
+	return pp.Compiled
 }
 
 // WithNonce returns csp string with nonce
 func (pp *Policy) WithNonce(nonce *string) string {
 	var (
-		_b [32]byte
+		_b [16]byte
 		b  = _b[:]
 	)
 
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("cspbuilder rand read failed")
+	}
 	*nonce = base64.RawStdEncoding.EncodeToString(b)
 
-	if pp.Built == "" {
+	if pp.Compiled == "" {
 		pp.Build()
 	}
 
-	return strings.ReplaceAll(pp.Built, noncePlaceHolder, "'nonce-"+*nonce+"'")
+	return strings.ReplaceAll(pp.Compiled, src[RequireNonce], " 'nonce-"+*nonce+"'")
 }
 
 // Map exports directives as map[string]string.
 // Does not include nonce source.
-// Useful for static middleware like gin-helmet.
+// Meant for middleware like gin-helmet that can only emit static csp strings
 func (pp *Policy) Map() map[string]string {
 	m := make(map[string]string, len(pp.dirs))
 
