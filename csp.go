@@ -162,7 +162,7 @@ func New() *Policy {
 // With adds directive to policy.
 // Existing directive is replaced.
 func (pp *Policy) With(name string, d *Directive) *Policy {
-	if pp.dirs ==  nil {
+	if pp.dirs == nil {
 		pp.dirs = make(map[string]*Directive)
 	}
 
@@ -173,7 +173,7 @@ func (pp *Policy) With(name string, d *Directive) *Policy {
 // New directive added to policy.
 // Existing directive is replaced.
 func (pp *Policy) New(name string, sources ...string) *Directive {
-	if pp.dirs ==  nil {
+	if pp.dirs == nil {
 		pp.dirs = make(map[string]*Directive)
 	}
 
