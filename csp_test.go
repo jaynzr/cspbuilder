@@ -15,7 +15,7 @@ func setup() *cspbuilder.Policy {
 	d := pol.New(cspbuilder.Script, "cdnjs.cloudflare.com", "cdn.jsdelivr.net")
 	d.Hash(cspbuilder.SHA512, `doSomething()`)
 	d.Fetch("www.google-analytics.com")
-	d.SourceFlag = cspbuilder.UnsafeInline | cspbuilder.Data | cspbuilder.RequireNonce | cspbuilder.StrictDynamic
+	d.SourceFlag = cspbuilder.UnsafeInline | cspbuilder.Data | cspbuilder.Nonce | cspbuilder.StrictDynamic
 
 	d = pol.New(cspbuilder.Style)
 	d.SourceFlag = cspbuilder.Self | cspbuilder.UnsafeInline

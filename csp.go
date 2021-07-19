@@ -60,8 +60,8 @@ const (
 	All  sourceFlag = 1 << iota
 	Self
 
-	// RequireNonce means policy must run WithNonce()
-	RequireNonce
+	// Nonce means policy must run WithNonce()
+	Nonce
 	StrictDynamic
 
 	UnsafeEval
@@ -73,6 +73,8 @@ const (
 	Data
 	Mediastream
 	Filesystem
+
+	ReportSample
 )
 
 var (
@@ -95,7 +97,9 @@ var (
 		Filesystem:  " filesystem:",
 
 		// nonce placeholder in Compiled string. Change using SetNoncePlaceholder()
-		RequireNonce: " $NONCE",
+		Nonce: " $NONCE",
+
+		ReportSample: "report-sample",
 	}
 )
 
@@ -126,7 +130,7 @@ func SetNoncePlaceholder(ph string) {
 		ph = "$NONCE"
 	}
 	// noncePlaceHolder = ph
-	src[RequireNonce] = " " + ph
+	src[Nonce] = " " + ph
 }
 
 // Starter creates new policy with sensible defaults
@@ -273,7 +277,7 @@ func (pp *Policy) Build() string {
 		sb.WriteString(Default)
 		d.write(sb)
 
-		pp.RequireNonce = pp.RequireNonce || (d.SourceFlag&RequireNonce) != 0
+		pp.RequireNonce = pp.RequireNonce || (d.SourceFlag&Nonce) != 0
 	}
 
 	for name, d := range pp.dirs {
@@ -284,7 +288,7 @@ func (pp *Policy) Build() string {
 		sb.WriteString(name)
 		d.write(sb)
 
-		pp.RequireNonce = pp.RequireNonce || (d.SourceFlag&RequireNonce) != 0
+		pp.RequireNonce = pp.RequireNonce || (d.SourceFlag&Nonce) != 0
 	}
 
 	if pp.UpgradeInsecureRequests {
@@ -320,7 +324,7 @@ func (pp *Policy) WithNonce(nonce *string) string {
 		pp.Build()
 	}
 
-	return strings.ReplaceAll(pp.Compiled, src[RequireNonce], " 'nonce-"+*nonce+"'")
+	return strings.ReplaceAll(pp.Compiled, src[Nonce], " 'nonce-"+*nonce+"'")
 }
 
 // Map exports directives as map[string]string.
