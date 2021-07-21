@@ -1,7 +1,7 @@
 # Content Security Policy Builder
 Content Security Policy (CSP) builder and middleware for Go.
 
-This allows you to create CSP with Go and integrate with a web framework or http/net.
+This allows you to create CSP with Go and integrate with a web framework or net/http.
 
 Supports CSP v3
 
