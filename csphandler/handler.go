@@ -9,7 +9,10 @@ import (
 )
 
 type key int
-const cspNonceKey key = iota
+const (
+	cspNonceKey key = iota
+	cspDirsMapKey
+)
 
 type ContentSecurityPolicy struct {
 	cspbuilder.Policy
@@ -29,6 +32,10 @@ func Nonce(c context.Context) string {
 
 func withCSPNonce(r *http.Request, nonce string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), cspNonceKey, nonce))
+}
+
+func WithCSPDirsMap(r *http.Request, m map[string]*cspbuilder.Directive) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), cspDirsMapKey, m))
 }
 
 // Handler implements the http.HandlerFunc for integration with the standard net/http lib.
@@ -54,8 +61,10 @@ func (csp ContentSecurityPolicy) Handler(h http.Handler) http.Handler {
 			cspString = csp.Policy.Build()
 		}
 
+		h.ServeHTTP(w, r)
+
+
 		w.Header().Set(header, cspString)
 
-		h.ServeHTTP(w, r)
 	})
 }

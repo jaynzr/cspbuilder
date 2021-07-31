@@ -24,19 +24,16 @@ func main() {
 	pol.UpgradeInsecureRequests = true
 
     // add script-src
-	var d *Directive = pol.New(cspbuilder.Script, "cdnjs.cloudflare.com", "cdn.jsdelivr.net")
+	var d *cspbuilder.Directive = pol.New(cspbuilder.Script, "cdnjs.cloudflare.com", "cdn.jsdelivr.net")
 	d.Hash(cspbuilder.SHA512, `doSomething()`)
-	d.Fetch("www.google-analytics.com")
-	d.SourceFlag = cspbuilder.UnsafeInline | cspbuilder.Data
+	d.Add("www.google-analytics.com", cspbuilder.UnsafeInline, cspbuilder.Data)
 
     // add style-src
 	d = pol.New(cspbuilder.Style)
-	d.SourceFlag = cspbuilder.Self | cspbuilder.UnsafeInline
-	d.Fetch("cdnjs.cloudflare.com", "fonts.googleapis.com")
+	d.Add(cspbuilder.Self, cspbuilder.UnsafeInline, "cdnjs.cloudflare.com", "fonts.googleapis.com")
 
-    // add connect-src
-	d = pol.New(cspbuilder.Connect)
-	d.SourceFlag = cspbuilder.All
+    // add img-src
+	pol.New(cspbuilder.Img, cspbuilder.All)
 
     // add font-src
 	pol.New(cspbuilder.Font, "fonts.googleapis.com", "fonts.gstatic.com")
@@ -45,20 +42,17 @@ func main() {
 	pol.New(cspbuilder.FrameAncestors)
 
     // experimental csp v3 require-trusted-types-for
-    d = pol.New(cspbuilder.RequireTrustedTypesFor)
-	d.Fetch("'script'")
+    pol.New(cspbuilder.RequireTrustedTypesFor, cspbuilder.TrustedScript)
 
 	pol.ReportURI = "/_csp-report"
 
     pol.Build()
 
     fmt.Println(pol.Compiled)
-    // default-src 'none';base-uri 'self';img-src 'self' www.google.com/recaptcha/;style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com fonts.googleapis.com;form-action 'self';font-src fonts.googleapis.com fonts.gstatic.com;frame-ancestors 'none';script-src 'unsafe-inline' data: cdnjs.cloudflare.com cdn.jsdelivr.net 'sha512-NrS2FABurNzIW2yTKRxF8X+HMhJh29vd9syOLut1MW4Cd1JeGzZqughLzC+LQr0O8XFhCuR4zyjLgrTQct7jAA==' www.google-analytics.com;connect-src *;require-trusted-types-for 'script';upgrade-insecure-requests;report-uri /_csp-report
+    // default-src 'none';script-src cdnjs.cloudflare.com cdn.jsdelivr.net 'sha512-NrS2FABurNzIW2yTKRxF8X+HMhJh29vd9syOLut1MW4Cd1JeGzZqughLzC+LQr0O8XFhCuR4zyjLgrTQct7jAA==' www.google-analytics.com 'unsafe-inline' data:;connect-src 'self';img-src *;form-action 'self';base-uri 'self';style-src 'self' 'unsafe-inline' cdnjs.cloudflare.com fonts.googleapis.com;font-src fonts.googleapis.com fonts.gstatic.com;frame-ancestors 'none';require-trusted-types-for 'script';upgrade-insecure-requests;report-uri /_csp-report
 }
 
 ```
-
-
 
 # Using gin middleware
 ```golang
@@ -78,6 +72,7 @@ func main() {
 
     r.GET("/", func(c *gin.Context) {
         nonce := gincsp.Nonce(c)
+
 
 		c.String(http.StatusOK, `<script nonce="` + nonce + `">doSomething()</script>`)
 	})
@@ -108,7 +103,7 @@ func main() {
 
     var d *Directive = pol.New(cspbuilder.Script)
     // add unsafe-line, data:, strict-dynamic, nonce sources to script-src
-	d.SourceFlag = cspbuilder.UnsafeInline | cspbuilder.Data | cspbuilder.Nonce | cspbuilder.StrictDynamic
+	d.Add(cspbuilder.UnsafeInline, cspbuilder.Data, cspbuilder.Nonce, cspbuilder.StrictDynamic)
 
     // Builds policy
     pol.Build()
@@ -136,40 +131,22 @@ CSP v1, v2 and most of v3 directive names are defined as constants.
 Experimental CSP v3 directives can be created
 ```golang
 prefetch := pol.New("prefetch-src")
-prefetch.Fetch("cdn.example.com")
+prefetch.Add("cdn.example.com")
 ```
 
 # Directive Sources
-Sources are added by running `Fetch` method or `SourceFlag` flag.
-The following flags can be OR'd to `Directive.SourceFlag` to produce keyword or scheme sources.
-- None
-- All
-- Self
-- Nonce
-- StrictDynamic
-- UnsafeEval
-- UnsafeInline
-- UnsafeHashes
-- UnsafeAllowRedirects
-- Blob
-- Data
-- Mediastream
-- Filesystem
-
-The `Fetch(sources ...string)` method appends arbituary string sources to the directive.
-Together with `SourceFlag`, the complete directive string is constructed.
+Sources are added by running `Add` method.
+The `Add(sources ...string)` method appends arbituary string sources to the directive.
 
 ## Example
 ```golang
 pol := cspbuilder.New()
 
-// new script-src Directive
-var d *Directive = pol.New(cspbuilder.Script)
-// add unsafe-line, data:, strict-dynamic, nonce sources to script-src
-d.SourceFlag = cspbuilder.UnsafeInline | cspbuilder.Data | cspbuilder.Nonce
+// new script-src Directive, with unsafe-line, data:, strict-dynamic, nonce sources to script-src
+var d *Directive = pol.New(cspbuilder.Script, cspbuilder.UnsafeInline, cspbuilder.Data, cspbuilder.Nonce)
 
 // alternatively, you may append the string values using Fetch()
-d.Fetch("cdn.example1.com", "example2.com", "'strict-dynamic'")
+d.Add("cdn.example1.com", "example2.com", "'strict-dynamic'")
 
 pol.Build()
 // pol.Compiled:
@@ -204,10 +181,8 @@ func main() {
     // start with blank policy
     pol := cspbuilder.New()
 
-	var d *Directive = pol.New(cspbuilder.Script)
-
-    // add unsafe-line, data:, strict-dynamic, nonce sources to script-src
-	d.SourceFlag = cspbuilder.UnsafeInline | cspbuilder.Data | cspbuilder.Nonce | cspbuilder.StrictDynamic
+    // add script-src, with unsafe-line, data:, strict-dynamic, nonce sources to script-src
+	var d *Directive = pol.New(cspbuilder.Script, cspbuilder.UnsafeInline, cspbuilder.Data, cspbuilder.Nonce, cspbuilder.StrictDynamic)
 
     pol.Build()
 
@@ -229,7 +204,6 @@ func main() {
 # Credits and References
 
 [Content Security Policy (CSP) Quick Reference Guide](https://content-security-policy.com/)
-
 
 [go-csp-engine](https://github.com/d4l3k/go-csp-engine)
 Unit test your CSP rules!
