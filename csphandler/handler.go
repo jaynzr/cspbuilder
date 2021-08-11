@@ -2,69 +2,110 @@
 package csphandler
 
 import (
-	"context"
 	"net/http"
-
+	"strings"
+	"context"
 	"github.com/jaynzr/cspbuilder"
 )
 
-type key int
-const (
-	cspNonceKey key = iota
-	cspDirsMapKey
-)
-
-type ContentSecurityPolicy struct {
-	cspbuilder.Policy
-
-	// ReportOnly sets Content-Security-Policy-Report-Only header
-	ReportOnly bool
+type cspValueSetter interface {
+	set(key string, value *cspbuilder.Directive)
+	get(ds string) *cspbuilder.Directive
+	nonce() string
 }
 
-// Nonce returns the nonce value associated with the present request. If no nonce has been generated it returns an empty string.
-func Nonce(c context.Context) string {
-	if val, ok := c.Value(cspNonceKey).(string); ok {
-		return val
+type cspResponseWriter struct {
+	http.ResponseWriter
+	m map[string]*cspbuilder.Directive
+	n string
+}
+
+func (w *cspResponseWriter) set(key string, d *cspbuilder.Directive) {
+	if w.m == nil {
+		w.m = map[string]*cspbuilder.Directive{}
 	}
 
-	return ""
+	w.m[key] = d
 }
 
-func withCSPNonce(r *http.Request, nonce string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), cspNonceKey, nonce))
+func (w *cspResponseWriter) get(ds string) *cspbuilder.Directive {
+	var (
+		d  *cspbuilder.Directive
+		ok bool
+	)
+
+	if w.m == nil {
+		w.m = make(map[string]*cspbuilder.Directive)
+	}
+
+	if d, ok = w.m[ds]; !ok {
+		d = &cspbuilder.Directive{}
+		w.m[ds] = d
+	}
+
+	return d
 }
 
-func WithCSPDirsMap(r *http.Request, m map[string]*cspbuilder.Directive) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), cspDirsMapKey, m))
+func (w *cspResponseWriter) nonce() string {
+	return w.n
 }
 
-// Handler implements the http.HandlerFunc for integration with the standard net/http lib.
-func (csp ContentSecurityPolicy) Handler(h http.Handler) http.Handler {
+// Nonce returns the nonce value associated with the present response. If no nonce has been generated it returns an empty string.
+func Nonce(w http.ResponseWriter) string {
+	setter, ok := w.(cspValueSetter)
+	if ok {
+		return setter.nonce()
+	}
+
+	panic("wrong w type")
+}
+
+func Directive(w http.ResponseWriter, ds string) *cspbuilder.Directive {
+	setter, ok := w.(cspValueSetter)
+	if ok {
+		return setter.get(ds)
+	}
+	panic("wrong w type")
+}
+
+func Hash(w http.ResponseWriter, ds string, ht cspbuilder.HashType, source string) {
+	d := Directive(w, ds)
+	d.Hash(ht, source)
+}
+
+// ContentSecurityPolicy implements the http.HandlerFunc for integration with the standard net/http lib.
+// reportOnly sets Content-Security-Policy-Report-Only header
+func ContentSecurityPolicy(pol *cspbuilder.Policy, h http.Handler, reportOnly bool) http.Handler {
 	header := "Content-Security-Policy"
-	if csp.ReportOnly {
+	if reportOnly {
 		header += "-Report-Only"
 	}
 
-	csp.Policy.Build()
+	pol.Build()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		var (
-			nonce     string
-			cspString = csp.Policy.Compiled
-		)
-
-		if csp.Policy.RequireNonce {
-			cspString = csp.Policy.WithNonce(&nonce)
-			r = withCSPNonce(r, nonce)
-		} else if cspString == "" {
-			cspString = csp.Policy.Build()
+		cspStr := pol.Compiled
+		cr := &cspResponseWriter{
+			ResponseWriter: w,
 		}
 
-		h.ServeHTTP(w, r)
+		if pol.RequireNonce {
+			cspStr = pol.WithNonce(&cr.n)
+		} else if cspStr == "" {
+			cspStr = pol.Build()
+		}
 
+		h.ServeHTTP(cr, r)
 
-		w.Header().Set(header, cspString)
+		if len(cr.m) > 0 {
+			cspStr = pol.MergeBuild(cr.m)
 
+			if len(cr.n) > 0 {
+				cspStr = strings.ReplaceAll(cspStr, cspbuilder.Nonce, "'nonce-"+cr.n+"'")
+			}
+		}
+
+		cr.Header().Set(header, cspStr)
 	})
 }

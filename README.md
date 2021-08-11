@@ -71,10 +71,15 @@ func main() {
     r.Use(gincsp.ContentSecurityPolicy(pol, false))
 
     r.GET("/", func(c *gin.Context) {
+		script := "doSomething();"
         nonce := gincsp.Nonce(c)
 
+        // calculate hash on dynamic script
+        gincsp.Hash(c, cspbuilder.Script, cspbuilder.SHA512, script)
 
-		c.String(http.StatusOK, `<script nonce="` + nonce + `">doSomething()</script>`)
+		c.String(http.StatusOK, `
+        <script>`+script+`</script>
+        <script nonce="` + nonce + `">doAnother()</script>`)
 	})
 }
 ```

@@ -2,6 +2,8 @@
 package gincsp
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jaynzr/cspbuilder"
 )
@@ -32,7 +34,7 @@ func Directive(c *gin.Context, ds string) *cspbuilder.Directive {
 
 func Hash(c *gin.Context, ds string, ht cspbuilder.HashType, source string) {
 	var (
-		m = getMap(c)
+		m  = getMap(c)
 		d  *cspbuilder.Directive
 		ok bool
 	)
@@ -60,6 +62,8 @@ func getMap(c *gin.Context) map[string]*cspbuilder.Directive {
 	return m
 }
 
+// ContentSecurityPolicy implements the gin.HandlerFunc.
+// reportOnly sets Content-Security-Policy-Report-Only header
 func ContentSecurityPolicy(pol *cspbuilder.Policy, reportOnly bool) gin.HandlerFunc {
 	header := "Content-Security-Policy"
 	if reportOnly {
@@ -70,25 +74,29 @@ func ContentSecurityPolicy(pol *cspbuilder.Policy, reportOnly bool) gin.HandlerF
 
 	return func(c *gin.Context) {
 		var (
-			nonce     string
-			m         map[string]*cspbuilder.Directive
-			csp = pol.Compiled
+			nonce  string
+			m      map[string]*cspbuilder.Directive
+			cspStr = pol.Compiled
 		)
 
 		if pol.RequireNonce {
-			csp = pol.WithNonce(&nonce)
+			cspStr = pol.WithNonce(&nonce)
 			c.Set(cspNonceKey, nonce)
-		} else if csp == "" {
-			csp = pol.Build()
+		} else if cspStr == "" {
+			cspStr = pol.Build()
 		}
 
 		c.Next()
 
 		m = getMap(c)
-		if m != nil {
-			csp = pol.MergeBuild(m)
+		if len(m) > 0 {
+			cspStr = pol.MergeBuild(m)
+
+			if len(nonce) > 0 {
+				cspStr = strings.ReplaceAll(cspStr, cspbuilder.Nonce, "'nonce-"+nonce+"'")
+			}
 		}
 
-		c.Header(header, csp)
+		c.Header(header, cspStr)
 	}
 }
