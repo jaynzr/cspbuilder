@@ -256,6 +256,12 @@ func (d *Directive) Add(sources ...string) {
 	d.sources = append(d.sources, sources...)
 }
 
+// Build policy into string
+func (pp *Policy) Build() string {
+	pp.Compiled = pp.MergeBuild(nil)
+	return pp.Compiled
+}
+
 func (pp *Policy) MergeBuild(dirs map[string]*Directive) string {
 	var (
 		sb   = &strings.Builder{}
@@ -284,12 +290,12 @@ func (pp *Policy) MergeBuild(dirs map[string]*Directive) string {
 		sb.WriteString(pp.ReportURI)
 	}
 
-	pp.Compiled = sb.String()
-	if len(pp.Compiled) > 0 && pp.Compiled[len(pp.Compiled)-1:] == ";" {
-		pp.Compiled = pp.Compiled[:len(pp.Compiled)-1]
+	compiled := sb.String()
+	if len(compiled) > 0 && compiled[len(compiled)-1:] == ";" {
+		compiled = compiled[:len(compiled)-1]
 	}
 
-	return pp.Compiled
+	return compiled
 }
 
 func (pp *Policy) writeDirs(sb *strings.Builder, dirs map[string]*Directive) {
@@ -334,11 +340,6 @@ func (pp *Policy) writeDirs(sb *strings.Builder, dirs map[string]*Directive) {
 
 		sb.WriteByte(';')
 	}
-}
-
-// Build policy into string
-func (pp *Policy) Build() string {
-	return pp.MergeBuild(nil)
 }
 
 // WithNonce returns csp string with nonce
