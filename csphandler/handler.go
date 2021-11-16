@@ -4,7 +4,6 @@ package csphandler
 import (
 	"html/template"
 	"net/http"
-	"strings"
 
 	"github.com/jaynzr/cspbuilder"
 )
