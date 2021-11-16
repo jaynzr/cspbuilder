@@ -2,9 +2,10 @@
 package csphandler
 
 import (
+	"html/template"
 	"net/http"
 	"strings"
-	"context"
+
 	"github.com/jaynzr/cspbuilder"
 )
 
@@ -60,6 +61,11 @@ func Nonce(w http.ResponseWriter) string {
 	panic("wrong w type")
 }
 
+// NonceHTMLAttr returns unescaped `nonce="<nonce>"` string for use in template.
+func NonceHTMLAttr(w http.ResponseWriter) template.HTMLAttr {
+	return template.HTMLAttr(`nonce="` + Nonce(w) + `"`)
+}
+
 func Directive(w http.ResponseWriter, ds string) *cspbuilder.Directive {
 	setter, ok := w.(cspValueSetter)
 	if ok {
@@ -96,9 +102,12 @@ func ContentSecurityPolicy(pol *cspbuilder.Policy, h http.Handler, reportOnly bo
 			cspStr = pol.Build()
 		}
 
+		cr.Header().Set(header, cspStr)
 		h.ServeHTTP(cr, r)
 
-		if len(cr.m) > 0 {
+		// TODO: csp header can't be issued after body is written.
+		// Untested workaround: issue `Trailer: Content-Security-Policy` header before `h.ServeHTTP(cr, r)`
+		/* if len(cr.m) > 0 {
 			cspStr = pol.MergeBuild(cr.m)
 
 			if len(cr.n) > 0 {
@@ -106,6 +115,6 @@ func ContentSecurityPolicy(pol *cspbuilder.Policy, h http.Handler, reportOnly bo
 			}
 		}
 
-		cr.Header().Set(header, cspStr)
+		cr.Header().Set(header, cspStr) */
 	})
 }

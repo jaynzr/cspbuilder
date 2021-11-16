@@ -199,6 +199,7 @@ func main() {
     s := pol.WithNonce(&nonce)
     fmt.Println(nonce)
     // ZNi/o0jlM3cxswKPc+Gr7g
+    // to use nonce in html/template, unescape with template.HTMLAttr(`nonce="`+nonce+`"`)
 
     fmt.Println(s)
     // nonce is base64 encoded 128-bit rand string

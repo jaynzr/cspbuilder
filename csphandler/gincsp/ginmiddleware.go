@@ -2,7 +2,7 @@
 package gincsp
 
 import (
-	"strings"
+	"html/template"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jaynzr/cspbuilder"
@@ -15,6 +15,11 @@ const (
 
 func Nonce(c *gin.Context) string {
 	return c.GetString(cspNonceKey)
+}
+
+// NonceHTMLAttr returns unescaped `nonce="<nonce>"` string for use in template.
+func NonceHTMLAttr(c *gin.Context) template.HTMLAttr {
+	return template.HTMLAttr(`nonce="` + Nonce(c) + `"`)
 }
 
 func Directive(c *gin.Context, ds string) *cspbuilder.Directive {
@@ -62,7 +67,7 @@ func getMap(c *gin.Context) map[string]*cspbuilder.Directive {
 	return m
 }
 
-// ContentSecurityPolicy implements the gin.HandlerFunc.
+// ContentSecurityPolicy implements the gin.HandlerFunc. Does not support dynamically calculated hashes
 // reportOnly sets Content-Security-Policy-Report-Only header
 func ContentSecurityPolicy(pol *cspbuilder.Policy, reportOnly bool) gin.HandlerFunc {
 	header := "Content-Security-Policy"
@@ -75,7 +80,6 @@ func ContentSecurityPolicy(pol *cspbuilder.Policy, reportOnly bool) gin.HandlerF
 	return func(c *gin.Context) {
 		var (
 			nonce  string
-			m      map[string]*cspbuilder.Directive
 			cspStr = pol.Compiled
 		)
 
@@ -86,17 +90,7 @@ func ContentSecurityPolicy(pol *cspbuilder.Policy, reportOnly bool) gin.HandlerF
 			cspStr = pol.Build()
 		}
 
-		c.Next()
-
-		m = getMap(c)
-		if len(m) > 0 {
-			cspStr = pol.MergeBuild(m)
-
-			if len(nonce) > 0 {
-				cspStr = strings.ReplaceAll(cspStr, cspbuilder.Nonce, "'nonce-"+nonce+"'")
-			}
-		}
-
 		c.Header(header, cspStr)
+		c.Next()
 	}
 }

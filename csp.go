@@ -359,7 +359,7 @@ func (pp *Policy) WithNonce(nonce *string) string {
 	if _, err := rand.Read(b); err != nil {
 		panic("cspbuilder rand read failed")
 	}
-	*nonce = base64.RawStdEncoding.EncodeToString(b)
+	*nonce = base64.RawURLEncoding.EncodeToString(b)
 
 	return strings.ReplaceAll(pp.Compiled, Nonce, "'nonce-"+*nonce+"'")
 }
